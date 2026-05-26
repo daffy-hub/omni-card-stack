@@ -1,6 +1,8 @@
-import { Send, Eraser, CheckSquare, Square, Trash2, Hash } from "lucide-react";
+import { Send, Eraser, CheckSquare, Square, Trash2, Hash, Activity, Cpu } from "lucide-react";
 import { useState } from "react";
 import type { Profile } from "@/lib/mock-profiles";
+import { ADAPTER_LIST } from "@/lib/command-adapters";
+import type { AdapterId } from "@/lib/commands";
 
 interface Props {
   profiles: Profile[];
@@ -13,6 +15,10 @@ interface Props {
   onAppendHashtags: (tags: string) => void;
   onSelectAllVisible: () => void;
   onClearSelection: () => void;
+  adapterId: AdapterId;
+  onAdapterChange: (id: AdapterId) => void;
+  onOpenActivity: () => void;
+  queueStats: { queued: number; running: number; awaiting: number; failed: number };
 }
 
 export function CommandPanel({
@@ -26,11 +32,16 @@ export function CommandPanel({
   onAppendHashtags,
   onSelectAllVisible,
   onClearSelection,
+  adapterId,
+  onAdapterChange,
+  onOpenActivity,
+  queueStats,
 }: Props) {
   const [hashtags, setHashtags] = useState("");
   const flagged = profiles.filter((p) => p.status === "flagged").length;
   const filled = profiles.filter((p) => p.draft.length > 0).length;
   const hasSpintax = /\{[^{}]+\|[^{}]+\}/.test(bulkText);
+  const activeAdapter = ADAPTER_LIST.find((a) => a.id === adapterId)!;
 
   return (
     <aside className="w-80 shrink-0 border-l border-border bg-card flex flex-col">
@@ -39,6 +50,39 @@ export function CommandPanel({
         <div className="text-[10px] text-muted-foreground font-mono">
           {selectedIds.size} selected · {profiles.length} visible
         </div>
+      </div>
+
+      {/* Execution adapter + activity */}
+      <div className="px-3 py-2 border-b border-border space-y-1.5">
+        <label className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+          <Cpu className="h-3 w-3" /> Executor
+        </label>
+        <select
+          value={adapterId}
+          onChange={(e) => onAdapterChange(e.target.value as AdapterId)}
+          className="w-full bg-input rounded px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-ring font-mono"
+        >
+          {ADAPTER_LIST.map((a) => (
+            <option key={a.id} value={a.id}>{a.label}</option>
+          ))}
+        </select>
+        <div className="text-[10px] text-muted-foreground leading-snug">
+          {activeAdapter.description}
+        </div>
+        <button
+          onClick={onOpenActivity}
+          className="w-full flex items-center justify-between px-2 py-1.5 rounded bg-secondary hover:bg-accent text-[11px] font-mono"
+        >
+          <span className="flex items-center gap-1.5">
+            <Activity className="h-3 w-3" /> Activity
+          </span>
+          <span className="flex items-center gap-2 text-[10px]">
+            <span title="Queued">⏱ {queueStats.queued}</span>
+            <span title="Running" className="text-primary">▶ {queueStats.running}</span>
+            <span title="Awaiting" style={{ color: "oklch(0.78 0.16 80)" }}>✋ {queueStats.awaiting}</span>
+            <span title="Failed" className="text-destructive">✕ {queueStats.failed}</span>
+          </span>
+        </button>
       </div>
 
       {/* Mass-account quick actions */}
