@@ -1,10 +1,23 @@
 import { memo, useMemo, useState, useEffect } from "react";
-import { AlertTriangle, ExternalLink, RotateCw, FileEdit, Globe, Copy, Check, KeyRound } from "lucide-react";
+import { AlertTriangle, ExternalLink, RotateCw, FileEdit, Globe, Copy, Check, KeyRound, Loader2, CheckCircle2, XCircle, Clock, Hand } from "lucide-react";
 import { scoreSeo, type Profile } from "@/lib/mock-profiles";
 import { TikTokIcon } from "./TikTokIcon";
+import type { Command, CommandStatus } from "@/lib/commands";
 
 const platformIcon = {
   tiktok: TikTokIcon,
+};
+
+const STATUS_META: Record<
+  CommandStatus,
+  { label: string; color: string; Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }
+> = {
+  queued: { label: "Queued", color: "var(--color-muted-foreground)", Icon: Clock },
+  running: { label: "Running", color: "var(--color-primary)", Icon: Loader2 },
+  awaiting: { label: "Awaiting", color: "oklch(0.78 0.16 80)", Icon: Hand },
+  succeeded: { label: "Posted", color: "oklch(0.72 0.18 150)", Icon: CheckCircle2 },
+  failed: { label: "Failed", color: "var(--color-destructive)", Icon: XCircle },
+  cancelled: { label: "Cancelled", color: "var(--color-muted-foreground)", Icon: XCircle },
 };
 
 interface Props {
@@ -13,6 +26,7 @@ interface Props {
   selected: boolean;
   pulsing?: boolean;
   keywords: string[];
+  command?: Command;
   onToggleSelect: (id: string) => void;
   onDraftChange: (id: string, value: string) => void;
   onToggleView: (id: string) => void;
@@ -39,7 +53,7 @@ function SeoRing({ score, tier }: { score: number; tier: "red" | "yellow" | "gre
 }
 
 function ProfileCardImpl({
-  profile, scale, selected, pulsing, keywords,
+  profile, scale, selected, pulsing, keywords, command,
   onToggleSelect, onDraftChange, onToggleView, onFlag, onUrlChange, onToggleLogin, onPopout, onNotify,
 }: Props) {
   const Icon = platformIcon[profile.platform];
@@ -73,6 +87,8 @@ function ProfileCardImpl({
     [profile.draft, profile.platform, keywords]
   );
 
+  const statusMeta = command ? STATUS_META[command.status] : null;
+
   // Glow priority: pulse > flagged > selected > loggedIn(green) > needs-login(red)
   const glow = pulsing
     ? "pulse-push"
@@ -92,6 +108,12 @@ function ProfileCardImpl({
       >
         <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: `var(--color-platform-${profile.platform})` }} />
         <span className="text-[11px] truncate flex-1 font-mono">{profile.name}</span>
+        {statusMeta && (
+          <statusMeta.Icon
+            className={`h-3 w-3 shrink-0 ${command?.status === "running" ? "animate-spin" : ""}`}
+            style={{ color: statusMeta.color }}
+          />
+        )}
         <span
           className="h-1.5 w-1.5 rounded-full shrink-0"
           style={{ background: profile.loggedIn ? "oklch(0.72 0.18 150)" : "var(--color-status-flagged)" }}
@@ -121,6 +143,21 @@ function ProfileCardImpl({
         />
         <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: `var(--color-platform-${profile.platform})` }} />
         <span className="text-[11px] font-mono truncate flex-1">{profile.name}</span>
+        {statusMeta && (
+          <span
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider"
+            style={{
+              color: statusMeta.color,
+              background: `color-mix(in oklab, ${statusMeta.color} 15%, transparent)`,
+            }}
+            title={command?.lastError ?? statusMeta.label}
+          >
+            <statusMeta.Icon
+              className={`h-2.5 w-2.5 ${command?.status === "running" ? "animate-spin" : ""}`}
+            />
+            {statusMeta.label}
+          </span>
+        )}
         <SeoRing score={seo.score} tier={seo.tier} />
         <button
           onClick={() => onPopout(profile.id)}

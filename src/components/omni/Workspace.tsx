@@ -5,11 +5,16 @@ import { CommandPanel } from "./CommandPanel";
 import { ProfileCard } from "./ProfileCard";
 import { VaultManager } from "./VaultManager";
 import { PopoutCredentialWidget } from "./PopoutCredentialWidget";
+import { ActivityDrawer } from "./ActivityDrawer";
 import {
   loadVault, saveVault, credentialToProfile, type Credential,
 } from "@/lib/vault";
 import { Search, ZoomIn, ShieldAlert, X, KeyRound, Globe } from "lucide-react";
 import { TikTokIcon } from "./TikTokIcon";
+import { enqueueCommand, latestByProfile } from "@/lib/commands";
+import { ADAPTERS, loadAdapterId, saveAdapterId } from "@/lib/command-adapters";
+import type { AdapterId } from "@/lib/commands";
+import { useCommandRunner, useCommands } from "@/hooks/useCommandRunner";
 
 const LS_KEY = "omni:auth-state:v1";
 
@@ -51,6 +56,8 @@ export function Workspace() {
   const [vaultOpen, setVaultOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [popoutCredId, setPopoutCredId] = useState<string | null>(null);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [adapterId, setAdapterId] = useState<AdapterId>(() => loadAdapterId());
   const hydratedRef = useRef(false);
 
   // Hydrate auth + vault on mount
@@ -171,8 +178,22 @@ export function Workspace() {
 
   const distribute = () => {
     if (selectedIds.size === 0 || !bulkText) return;
-    setProfiles((prev) => prev.map((p) => (selectedIds.has(p.id) ? { ...p, draft: spintax(bulkText) } : p)));
+    const ids = Array.from(selectedIds);
+    setProfiles((prev) =>
+      prev.map((p) => {
+        if (!selectedIds.has(p.id)) return p;
+        const text = spintax(bulkText);
+        enqueueCommand({
+          profileId: p.id,
+          platform: p.platform,
+          kind: "post",
+          payload: { text },
+        });
+        return { ...p, draft: text };
+      }),
+    );
     triggerPulse(new Set(selectedIds));
+    notify(`Queued ${ids.length} command${ids.length === 1 ? "" : "s"} via ${ADAPTERS[adapterId].label}`);
   };
   const clearDrafts = () => {
     const ids = new Set(visibleProfiles.map((p) => p.id));
@@ -280,6 +301,43 @@ export function Workspace() {
 
   const loggedInCount = profiles.filter((p) => p.loggedIn).length;
   const popoutCred = popoutCredId ? vault.find((c) => c.id === popoutCredId) : null;
+
+  // Command runner
+  const profilesByIdRef = useRef<Record<string, Profile>>({});
+  profilesByIdRef.current = useMemo(() => {
+    const m: Record<string, Profile> = {};
+    for (const p of profiles) m[p.id] = p;
+    return m;
+  }, [profiles]);
+  const adapter = ADAPTERS[adapterId];
+  useCommandRunner(
+    adapter,
+    (id) => profilesByIdRef.current[id],
+    (cmd, result) => {
+      const p = profilesByIdRef.current[cmd.profileId];
+      const name = p?.name ?? cmd.profileId;
+      if (result === "succeeded") notify(`✓ Posted to ${name}`);
+      else if (result === "failed") notify(`✕ Failed: ${name}`);
+      else if (result === "awaiting") notify(`✋ Awaiting manual post: ${name}`);
+    },
+  );
+  const commands = useCommands();
+  const commandByProfile = useMemo(() => latestByProfile(commands), [commands]);
+  const queueStats = useMemo(() => {
+    const s = { queued: 0, running: 0, awaiting: 0, failed: 0 };
+    for (const c of commands) {
+      if (c.status === "queued") s.queued++;
+      else if (c.status === "running") s.running++;
+      else if (c.status === "awaiting") s.awaiting++;
+      else if (c.status === "failed") s.failed++;
+    }
+    return s;
+  }, [commands]);
+
+  const onAdapterChange = (id: AdapterId) => {
+    setAdapterId(id);
+    saveAdapterId(id);
+  };
 
   return (
     <div className="h-screen w-screen flex bg-background text-foreground overflow-hidden">
@@ -390,6 +448,7 @@ export function Workspace() {
                   selected={selectedIds.has(profile.id)}
                   pulsing={pulsingIds.has(profile.id)}
                   keywords={keywords}
+                  command={commandByProfile[profile.id]}
                   onToggleSelect={toggleSelect}
                   onDraftChange={onDraftChange}
                   onToggleView={onToggleView}
@@ -416,6 +475,10 @@ export function Workspace() {
         onAppendHashtags={appendHashtags}
         onSelectAllVisible={selectAllVisible}
         onClearSelection={clearSelection}
+        adapterId={adapterId}
+        onAdapterChange={onAdapterChange}
+        onOpenActivity={() => setActivityOpen(true)}
+        queueStats={queueStats}
       />
 
       <VaultManager
@@ -427,6 +490,13 @@ export function Workspace() {
         onUpdate={updateCredential}
         onDelete={deleteCredential}
         notify={notify}
+      />
+
+      <ActivityDrawer
+        open={activityOpen}
+        onClose={() => setActivityOpen(false)}
+        commands={commands}
+        profilesById={profilesByIdRef.current}
       />
 
       {popoutCred && (
