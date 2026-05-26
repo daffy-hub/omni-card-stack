@@ -1,0 +1,112 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-status-idle: var(--status-idle);
+  --color-status-selected: var(--status-selected);
+  --color-status-filled: var(--status-filled);
+  --color-status-flagged: var(--status-flagged);
+
+  --color-platform-tiktok: var(--platform-tiktok);
+}
+
+:root {
+  --radius: 0.5rem;
+  /* Dark slate workspace */
+  --background: oklch(0.18 0.012 250);
+  --foreground: oklch(0.96 0.005 250);
+  --card: oklch(0.22 0.014 250);
+  --card-foreground: oklch(0.96 0.005 250);
+  --popover: oklch(0.22 0.014 250);
+  --popover-foreground: oklch(0.96 0.005 250);
+  --primary: oklch(0.72 0.16 235);
+  --primary-foreground: oklch(0.15 0.01 250);
+  --secondary: oklch(0.28 0.016 250);
+  --secondary-foreground: oklch(0.96 0.005 250);
+  --muted: oklch(0.26 0.014 250);
+  --muted-foreground: oklch(0.68 0.02 250);
+  --accent: oklch(0.32 0.02 250);
+  --accent-foreground: oklch(0.96 0.005 250);
+  --destructive: oklch(0.65 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.30 0.014 250);
+  --input: oklch(0.26 0.014 250);
+  --ring: oklch(0.72 0.16 235);
+
+  --status-idle: oklch(0.55 0.012 250);
+  --status-selected: oklch(0.70 0.17 235);
+  --status-filled: oklch(0.75 0.16 60);
+  --status-flagged: oklch(0.65 0.24 25);
+
+  --platform-tiktok: oklch(0.78 0.18 200);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-muted-foreground); }
+}
+
+@layer utilities {
+  .glow-idle { box-shadow: inset 0 0 0 1px var(--color-status-idle); }
+  .glow-selected { box-shadow: inset 0 0 0 2px var(--color-status-selected), 0 0 16px -4px var(--color-status-selected); }
+  .glow-filled { box-shadow: inset 0 0 0 2px var(--color-status-filled), 0 0 14px -6px var(--color-status-filled); }
+  .glow-flagged { box-shadow: inset 0 0 0 2px var(--color-status-flagged), 0 0 16px -4px var(--color-status-flagged); }
+
+  /* Login state glows */
+  --auth-green: oklch(0.72 0.18 150);
+  --auth-red:   oklch(0.65 0.24 25);
+  .glow-needs-login   { box-shadow: inset 0 0 0 2px var(--auth-red),   0 0 14px -6px var(--auth-red); }
+  .glow-authenticated { box-shadow: inset 0 0 0 2px var(--auth-green), 0 0 14px -6px var(--auth-green); }
+
+  @keyframes pulse-push {
+    0%   { box-shadow: inset 0 0 0 2px var(--color-primary), 0 0 0 0 color-mix(in oklab, var(--color-primary) 60%, transparent); }
+    60%  { box-shadow: inset 0 0 0 2px var(--color-primary), 0 0 0 10px transparent; }
+    100% { box-shadow: inset 0 0 0 1px var(--color-status-idle); }
+  }
+  .pulse-push { animation: pulse-push 0.7s ease-out; }
+
+  .seo-ring-red    { color: var(--color-status-flagged); }
+  .seo-ring-yellow { color: var(--color-status-filled); }
+  .seo-ring-green  { color: oklch(0.75 0.18 150); }
+}
