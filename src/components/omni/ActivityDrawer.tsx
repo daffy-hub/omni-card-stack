@@ -18,7 +18,7 @@ interface Props {
 
 const STATUS_META: Record<
   CommandStatus,
-  { label: string; color: string; Icon: React.ComponentType<{ className?: string }> }
+  { label: string; color: string; Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }
 > = {
   queued: { label: "Queued", color: "var(--color-muted-foreground)", Icon: Clock },
   running: { label: "Running", color: "var(--color-primary)", Icon: Loader2 },
