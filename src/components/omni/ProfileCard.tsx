@@ -76,6 +76,8 @@ function ProfileCardImpl({
     [profile.draft, profile.platform, keywords]
   );
 
+  const statusMeta = command ? STATUS_META[command.status] : null;
+
   // Glow priority: pulse > flagged > selected > loggedIn(green) > needs-login(red)
   const glow = pulsing
     ? "pulse-push"
@@ -95,6 +97,12 @@ function ProfileCardImpl({
       >
         <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: `var(--color-platform-${profile.platform})` }} />
         <span className="text-[11px] truncate flex-1 font-mono">{profile.name}</span>
+        {statusMeta && (
+          <statusMeta.Icon
+            className={`h-3 w-3 shrink-0 ${command?.status === "running" ? "animate-spin" : ""}`}
+            style={{ color: statusMeta.color }}
+          />
+        )}
         <span
           className="h-1.5 w-1.5 rounded-full shrink-0"
           style={{ background: profile.loggedIn ? "oklch(0.72 0.18 150)" : "var(--color-status-flagged)" }}
@@ -124,6 +132,21 @@ function ProfileCardImpl({
         />
         <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: `var(--color-platform-${profile.platform})` }} />
         <span className="text-[11px] font-mono truncate flex-1">{profile.name}</span>
+        {statusMeta && (
+          <span
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider"
+            style={{
+              color: statusMeta.color,
+              background: `color-mix(in oklab, ${statusMeta.color} 15%, transparent)`,
+            }}
+            title={command?.lastError ?? statusMeta.label}
+          >
+            <statusMeta.Icon
+              className={`h-2.5 w-2.5 ${command?.status === "running" ? "animate-spin" : ""}`}
+            />
+            {statusMeta.label}
+          </span>
+        )}
         <SeoRing score={seo.score} tier={seo.tier} />
         <button
           onClick={() => onPopout(profile.id)}
