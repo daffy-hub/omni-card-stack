@@ -9,6 +9,18 @@ const platformIcon = {
   tiktok: TikTokIcon,
 };
 
+const STATUS_META: Record<
+  CommandStatus,
+  { label: string; color: string; Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }
+> = {
+  queued: { label: "Queued", color: "var(--color-muted-foreground)", Icon: Clock },
+  running: { label: "Running", color: "var(--color-primary)", Icon: Loader2 },
+  awaiting: { label: "Awaiting", color: "oklch(0.78 0.16 80)", Icon: Hand },
+  succeeded: { label: "Posted", color: "oklch(0.72 0.18 150)", Icon: CheckCircle2 },
+  failed: { label: "Failed", color: "var(--color-destructive)", Icon: XCircle },
+  cancelled: { label: "Cancelled", color: "var(--color-muted-foreground)", Icon: XCircle },
+};
+
 interface Props {
   profile: Profile;
   scale: number;
