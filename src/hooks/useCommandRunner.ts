@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Profile } from "@/lib/mock-profiles";
 import {
   subscribeCommands,
@@ -87,30 +87,9 @@ export function useCommandRunner(
 }
 
 export function useCommands(): Command[] {
-  // Lightweight subscribe → state
-  const [, force] = useForceRender();
-  const ref = useRef<Command[]>([]);
-  useEffect(() => subscribeCommands((cs) => {
-    ref.current = cs;
-    force();
-  }), [force]);
-  return ref.current;
-}
-
-function useForceRender() {
-  const ref = useRef(0);
-  const set = useRef<(n: number) => void>(() => {});
-  const [n, _set] = (require as never) // no-op shim
-    ? useStateShim()
-    : useStateShim();
-  set.current = _set;
-  return [n, () => set.current(++ref.current)] as const;
-}
-
-// Inline useState to keep this file self-contained for the helper above
-import { useState } from "react";
-function useStateShim() {
-  return useState(0);
+  const [commands, setCommands] = useState<Command[]>([]);
+  useEffect(() => subscribeCommands(setCommands), []);
+  return commands;
 }
 
 export { ADAPTERS };
