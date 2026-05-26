@@ -1,7 +1,9 @@
 import { memo, useMemo, useState, useEffect } from "react";
-import { AlertTriangle, ExternalLink, RotateCw, FileEdit, Globe, Copy, Check, KeyRound } from "lucide-react";
+import { AlertTriangle, ExternalLink, RotateCw, FileEdit, Globe, Copy, Check, KeyRound, Loader2, CheckCircle2, XCircle, Clock, Hand } from "lucide-react";
 import { scoreSeo, type Profile } from "@/lib/mock-profiles";
 import { TikTokIcon } from "./TikTokIcon";
+import type { Command, CommandStatus } from "@/lib/commands";
+import { updateCommand } from "@/lib/commands";
 
 const platformIcon = {
   tiktok: TikTokIcon,
@@ -13,6 +15,7 @@ interface Props {
   selected: boolean;
   pulsing?: boolean;
   keywords: string[];
+  command?: Command;
   onToggleSelect: (id: string) => void;
   onDraftChange: (id: string, value: string) => void;
   onToggleView: (id: string) => void;
@@ -39,7 +42,7 @@ function SeoRing({ score, tier }: { score: number; tier: "red" | "yellow" | "gre
 }
 
 function ProfileCardImpl({
-  profile, scale, selected, pulsing, keywords,
+  profile, scale, selected, pulsing, keywords, command,
   onToggleSelect, onDraftChange, onToggleView, onFlag, onUrlChange, onToggleLogin, onPopout, onNotify,
 }: Props) {
   const Icon = platformIcon[profile.platform];
