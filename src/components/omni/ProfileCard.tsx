@@ -3,7 +3,6 @@ import { AlertTriangle, ExternalLink, RotateCw, FileEdit, Globe, Copy, Check, Ke
 import { scoreSeo, type Profile } from "@/lib/mock-profiles";
 import { TikTokIcon } from "./TikTokIcon";
 import type { Command, CommandStatus } from "@/lib/commands";
-import { updateCommand } from "@/lib/commands";
 
 const platformIcon = {
   tiktok: TikTokIcon,
