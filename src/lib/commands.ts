@@ -8,11 +8,13 @@ export type CommandStatus =
   | "failed"
   | "cancelled";
 
-export type CommandKind = "post" | "comment" | "dm";
+export type CommandKind = "post" | "comment" | "dm" | "like";
 
 export interface CommandPayload {
-  text: string;
+  text?: string;
   hashtags?: string;
+  /** Required for comment/dm/like; for post it's optional (defaults to upload page). */
+  targetUrl?: string;
 }
 
 export interface Command {
