@@ -6,6 +6,7 @@ import { ProfileCard } from "./ProfileCard";
 import { VaultManager } from "./VaultManager";
 import { PopoutCredentialWidget } from "./PopoutCredentialWidget";
 import { ActivityDrawer } from "./ActivityDrawer";
+import { CycleHud } from "./CycleHud";
 import {
   loadVault, saveVault, credentialToProfile, type Credential,
 } from "@/lib/vault";
@@ -13,7 +14,7 @@ import { Search, ZoomIn, ShieldAlert, X, KeyRound, Globe } from "lucide-react";
 import { TikTokIcon } from "./TikTokIcon";
 import { enqueueCommand, latestByProfile } from "@/lib/commands";
 import { ADAPTERS, loadAdapterId, saveAdapterId } from "@/lib/command-adapters";
-import type { AdapterId } from "@/lib/commands";
+import type { AdapterId, CommandKind } from "@/lib/commands";
 import { useCommandRunner, useCommands } from "@/hooks/useCommandRunner";
 
 const LS_KEY = "omni:auth-state:v1";
@@ -176,24 +177,26 @@ export function Workspace() {
     setTimeout(() => setPulsingIds(new Set()), 750);
   };
 
-  const distribute = () => {
-    if (selectedIds.size === 0 || !bulkText) return;
+  const distribute = (kind: CommandKind, targetUrl: string) => {
+    if (selectedIds.size === 0) return;
+    if (kind !== "like" && !bulkText) return;
+    if (kind !== "post" && !targetUrl) return;
     const ids = Array.from(selectedIds);
     setProfiles((prev) =>
       prev.map((p) => {
         if (!selectedIds.has(p.id)) return p;
-        const text = spintax(bulkText);
+        const text = kind === "like" ? "" : spintax(bulkText);
         enqueueCommand({
           profileId: p.id,
           platform: p.platform,
-          kind: "post",
-          payload: { text },
+          kind,
+          payload: { text: text || undefined, targetUrl: targetUrl || undefined },
         });
-        return { ...p, draft: text };
+        return kind === "post" ? { ...p, draft: text } : p;
       }),
     );
     triggerPulse(new Set(selectedIds));
-    notify(`Queued ${ids.length} command${ids.length === 1 ? "" : "s"} via ${ADAPTERS[adapterId].label}`);
+    notify(`Queued ${ids.length} ${kind}${ids.length === 1 ? "" : "s"} via ${ADAPTERS[adapterId].label}`);
   };
   const clearDrafts = () => {
     const ids = new Set(visibleProfiles.map((p) => p.id));
@@ -333,6 +336,14 @@ export function Workspace() {
     }
     return s;
   }, [commands]);
+
+  // For the CycleHud: pick the current awaiting command (only one at a time).
+  const awaitingCmd = useMemo(
+    () => commands.find((c) => c.status === "awaiting") ?? null,
+    [commands],
+  );
+  const awaitingProfile = awaitingCmd ? profilesByIdRef.current[awaitingCmd.profileId] ?? null : null;
+  const remainingTotal = queueStats.queued + queueStats.awaiting + queueStats.running;
 
   const onAdapterChange = (id: AdapterId) => {
     setAdapterId(id);
@@ -498,6 +509,16 @@ export function Workspace() {
         commands={commands}
         profilesById={profilesByIdRef.current}
       />
+
+      {adapterId === "guided-cycle" && (
+        <CycleHud
+          command={awaitingCmd}
+          profile={awaitingProfile}
+          queuedAhead={queueStats.queued}
+          totalRemaining={remainingTotal}
+          onNotify={notify}
+        />
+      )}
 
       {popoutCred && (
         <PopoutCredentialWidget

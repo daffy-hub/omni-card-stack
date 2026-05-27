@@ -96,10 +96,17 @@ export function ActivityDrawer({ open, onClose, commands, profilesById }: Props)
                     {new Date(c.createdAt).toLocaleTimeString()}
                   </span>
                 </div>
-                <div className="text-[11px] text-muted-foreground font-mono whitespace-pre-wrap line-clamp-3">
-                  {c.payload.text}
-                  {c.payload.hashtags ? ` ${c.payload.hashtags}` : ""}
-                </div>
+                {(c.payload.text || c.payload.hashtags) && (
+                  <div className="text-[11px] text-muted-foreground font-mono whitespace-pre-wrap line-clamp-3">
+                    {c.payload.text}
+                    {c.payload.hashtags ? ` ${c.payload.hashtags}` : ""}
+                  </div>
+                )}
+                {c.payload.targetUrl && (
+                  <div className="text-[10px] text-primary font-mono truncate" title={c.payload.targetUrl}>
+                    → {c.payload.targetUrl}
+                  </div>
+                )}
                 {c.lastError && (
                   <div className="text-[10px] text-destructive font-mono">{c.lastError}</div>
                 )}

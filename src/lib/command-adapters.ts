@@ -1,5 +1,5 @@
 import type { Profile } from "./mock-profiles";
-import type { AdapterId, Command } from "./commands";
+import type { AdapterId, Command, CommandKind } from "./commands";
 
 export interface AdapterResult {
   ok: boolean;
@@ -28,14 +28,61 @@ const simulated: CommandAdapter = {
   },
 };
 
-/** Opens credential pop-out + platform compose URL; waits for user to confirm via the card. */
-const manualPopout: CommandAdapter = {
-  id: "manual-popout",
-  label: "Manual pop-out",
-  description: "Opens the platform in a pop-out window with credentials visible. You paste & post, then confirm on the card.",
-  run: async (_cmd, profile) => {
+/** Resolves the deep link for a command/profile, by kind. */
+export function resolveCycleUrl(cmd: Command, profile: Profile): string {
+  const target = cmd.payload.targetUrl?.trim();
+  switch (cmd.kind) {
+    case "post":
+      return target || "https://www.tiktok.com/upload";
+    case "comment":
+    case "like":
+      return target || profile.currentUrl || profile.loginUrl;
+    case "dm": {
+      if (target) return target;
+      const u = profile.username?.replace(/^@/, "");
+      return u ? `https://www.tiktok.com/messages?u=${encodeURIComponent(u)}` : "https://www.tiktok.com/messages";
+    }
+    default:
+      return profile.currentUrl || profile.loginUrl;
+  }
+}
+
+const CYCLE_WINDOW_NAME = "omni-cycle";
+
+/** Builds the clipboard payload (caption + hashtags) for a command. */
+export function clipboardPayload(cmd: Command): string {
+  const parts: string[] = [];
+  if (cmd.payload.text) parts.push(cmd.payload.text);
+  if (cmd.payload.hashtags) parts.push(cmd.payload.hashtags);
+  return parts.join(" ").trim();
+}
+
+const KIND_LABEL: Record<CommandKind, string> = {
+  post: "Post",
+  comment: "Comment",
+  dm: "DM",
+  like: "Like",
+};
+
+export { KIND_LABEL };
+
+/** Guided cycle: reuses ONE pop-out tab across the queue, pre-copies payload, waits for user "Done". */
+const guidedCycle: CommandAdapter = {
+  id: "guided-cycle",
+  label: "Guided cycle (manual)",
+  description: "Opens ONE reusable pop-out, copies caption to clipboard, advances to the next account when you press Done.",
+  run: async (cmd, profile) => {
     if (typeof window === "undefined") return { ok: false, error: "No window context" };
-    window.open(profile.currentUrl || profile.loginUrl, "_blank", "width=450,height=700");
+    const url = resolveCycleUrl(cmd, profile);
+    // Pre-copy payload (best effort; clipboard may be blocked on first call)
+    const text = clipboardPayload(cmd);
+    if (text && navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(text); } catch {}
+    }
+    // Reuse the same named window across the cycle so subsequent commands replace the tab.
+    try {
+      window.open(url, CYCLE_WINDOW_NAME, "width=480,height=820");
+    } catch {}
     return { ok: false, awaiting: true };
   },
 };
@@ -66,11 +113,11 @@ const extensionBridge: CommandAdapter = {
 
 export const ADAPTERS: Record<AdapterId, CommandAdapter> = {
   simulated,
-  "manual-popout": manualPopout,
+  "guided-cycle": guidedCycle,
   "extension-bridge": extensionBridge,
 };
 
-export const ADAPTER_LIST: CommandAdapter[] = [simulated, manualPopout, extensionBridge];
+export const ADAPTER_LIST: CommandAdapter[] = [guidedCycle, simulated, extensionBridge];
 
 const LS_KEY = "omni:adapter:v1";
 
