@@ -7,6 +7,32 @@ import {
 } from "@/lib/commands";
 import { ADAPTERS, type CommandAdapter } from "@/lib/command-adapters";
 
+let paused = false;
+const pauseListeners = new Set<(p: boolean) => void>();
+export function setRunnerPaused(v: boolean) {
+  paused = v;
+  for (const fn of pauseListeners) fn(paused);
+}
+export function isRunnerPaused() {
+  return paused;
+}
+export function subscribePaused(fn: (p: boolean) => void) {
+  pauseListeners.add(fn);
+  fn(paused);
+  return () => pauseListeners.delete(fn);
+}
+
+/** Resolve an awaiting command from the HUD. */
+export function resolveCommand(id: string, outcome: "succeeded" | "failed" | "cancelled", error?: string) {
+  if (outcome === "succeeded") {
+    updateCommand(id, { status: "succeeded", finishedAt: Date.now() });
+  } else if (outcome === "failed") {
+    updateCommand(id, { status: "failed", finishedAt: Date.now(), lastError: error ?? "Marked failed by user" });
+  } else {
+    updateCommand(id, { status: "cancelled", finishedAt: Date.now() });
+  }
+}
+
 /**
  * Drains the `queued` commands one-at-a-time through the active adapter.
  * Re-runs whenever the queue changes or the adapter changes.
@@ -28,7 +54,9 @@ export function useCommandRunner(
     let cancelled = false;
 
     const tick = async (commands: Command[]) => {
-      if (busyRef.current || cancelled) return;
+      if (busyRef.current || cancelled || paused) return;
+      // Don't start a new command while one is awaiting user action.
+      if (commands.some((c) => c.status === "awaiting")) return;
       const next = commands.find((c) => c.status === "queued");
       if (!next) return;
       const profile = getProfileRef.current(next.profileId);
