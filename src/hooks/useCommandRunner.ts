@@ -3,6 +3,7 @@ import type { Profile } from "@/lib/mock-profiles";
 import {
   subscribeCommands,
   updateCommand,
+  getCommands,
   type Command,
 } from "@/lib/commands";
 import { ADAPTERS, type CommandAdapter } from "@/lib/command-adapters";
@@ -12,7 +13,14 @@ const pauseListeners = new Set<(p: boolean) => void>();
 export function setRunnerPaused(v: boolean) {
   paused = v;
   for (const fn of pauseListeners) fn(paused);
+  if (!v) {
+    // Wake the runner: any subscriber will re-run tick on the next store write.
+    // We don't have a direct tick handle, so re-publish current state by no-op update.
+    // Instead, listeners themselves listen to pause and call their tick.
+    for (const fn of wakeListeners) fn();
+  }
 }
+const wakeListeners = new Set<() => void>();
 export function isRunnerPaused() {
   return paused;
 }
@@ -107,8 +115,11 @@ export function useCommandRunner(
     };
 
     const unsub = subscribeCommands(tick);
+    const wake = () => tick(getCommands());
+    wakeListeners.add(wake);
     return () => {
       cancelled = true;
+      wakeListeners.delete(wake);
       unsub();
     };
   }, []);
