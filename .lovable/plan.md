@@ -1,76 +1,83 @@
 
-# Command Execution Pipeline
+# Guided Cycle Runner for TikTok (and beyond)
 
-Today "Distribute" only writes text into per-card draft fields. There is no
-queue, no status, no record of what was sent, and nothing actually leaves the
-browser. This plan adds a real command layer that the UI dispatches into and
-an executor consumes — designed so the executor can later be a TikTok API
-worker or a browser extension without changing the UI contract.
+You picked the smart-manual path with one connection per profile. Real automated like/comment/DM isn't available on TikTok's API, but we can make the manual loop fast enough that posting 20 accounts feels like one continuous flow instead of 20 tabs.
+
+## Honest constraint up front
+A web app **cannot type into a TikTok tab it opened** — browsers block cross-origin DOM access for security. So "auto-fill" really means:
+- Open the *exact* deep link for the action (compose page, specific video, DM thread).
+- Copy the payload (caption, comment, DM body) to the clipboard automatically.
+- Show a small floating coach card so the user just hits ⌘V → post → Done.
+
+Real DOM auto-fill requires the browser extension (the existing `extension-bridge` seam). This plan keeps that door open for later but doesn't depend on it.
 
 ## What we'll build
 
-### 1. Command model (Lovable Cloud)
-A `commands` table per user:
+### 1. New adapter: `guided-cycle` (replaces simple `manual-popout` as default)
+Behavior per command:
+1. Mark command `running`, then `awaiting`.
+2. Copy `payload.text` (+ hashtags) to the clipboard.
+3. Open a single reusable pop-out tab (`window.open(url, 'omni-cycle')`) — reusing the name means the *same* tab is reused across the whole cycle instead of spawning N tabs.
+4. URL is resolved per `kind`:
+   - `post` → `https://www.tiktok.com/upload` (or `tiktokstudio.com/upload`)
+   - `comment` → `payload.targetUrl` (the video URL)
+   - `dm` → `https://www.tiktok.com/messages?u=<username>`
+   - `like` (new kind) → `payload.targetUrl`
+5. App stays focused on a **Cycle HUD** (new component) showing: current profile, payload, "Open tab" / "Done" / "Skip" / "Fail" / "Pause".
+6. On **Done**: mark `succeeded`, dequeue next command, repeat from step 2 — the pop-out tab navigates to the next URL automatically (same window name).
+7. On **Fail**: prompt for reason, store in `lastError`, continue.
+8. On **Pause**: stop the auto-advance; queue resumes when user clicks Resume.
 
-```text
-id, user_id, profile_id, platform, kind ('post'|'comment'|'dm'…),
-payload (jsonb: text, hashtags, mediaRefs),
-status ('queued'|'running'|'succeeded'|'failed'|'cancelled'),
-attempts, last_error, created_at, started_at, finished_at
+### 2. New command kind: `like`
+Add `like` to `CommandKind` and to the dispatch UI. Payload is just `{ targetUrl }`.
+
+### 3. Per-command target URL
+Today commands only carry `text`. Extend `CommandPayload`:
+```ts
+interface CommandPayload {
+  text?: string;          // caption / comment / DM body
+  hashtags?: string;
+  targetUrl?: string;     // required for comment/dm/like
+}
 ```
+`CommandPanel` gains a small "Target URL" field that's only shown for non-post kinds, plus a kind selector (Post / Comment / DM / Like).
 
-RLS: owner-only CRUD. Realtime enabled so the UI updates live.
+### 4. Cycle HUD component (`src/components/omni/CycleHud.tsx`)
+Sticky bottom-right panel, only visible when `guided-cycle` is the active adapter AND there's an `awaiting` command. Shows:
+- Profile name + niche
+- Kind badge + payload preview (truncated)
+- Big buttons: **Open / Re-open tab**, **Done (⏎)**, **Skip (S)**, **Fail (F)**, **Pause (Esc)**
+- "Clipboard ready ✓" indicator
+- Queue progress: "3 / 20"
+- Keyboard shortcuts wired via `window.addEventListener('keydown')` so the user never leaves the keyboard.
 
-### 2. Dispatch path (frontend)
-- `CommandPanel.onDistribute` no longer mutates `profile.draft`. It calls
-  `enqueueCommands(selectedIds, spintax(bulkText), hashtags)` which inserts
-  one row per selected profile with `status='queued'`.
-- Each `ProfileCard` subscribes (via realtime) to its latest command and
-  shows a status chip: queued / running / posted / failed + error tooltip.
-- A new **Activity** drawer (toggle in header) lists recent commands with
-  filter by status and a Retry button for failed ones.
+### 5. Runner changes (`useCommandRunner.ts`)
+- Already drains queue one-at-a-time → keep.
+- Add a `resolveCommand(id, outcome)` API the HUD calls. This flips the `awaiting` row to `succeeded`/`failed`/`cancelled` and the existing tick picks up the next queued command.
+- Add an in-memory "cycle session" flag so we don't accidentally re-open a fresh tab when the user already has the cycle tab open.
 
-### 3. Executor (pluggable)
-A small dispatcher hook `useCommandRunner()` that:
-1. Reads `queued` commands for the current user.
-2. Marks one `running`, calls the active **adapter**, then writes the result.
+### 6. Small adapter cleanups
+- Keep `simulated` for demos.
+- Keep `extension-bridge` stub — it's the upgrade path for true auto-fill / auto-like.
+- Remove the old one-shot `manual-popout` (or rename it to `guided-cycle` since the behavior is a strict superset).
 
-Adapters (interface: `run(command, profile) => {ok, error?}`):
-- **`simulated`** (default, ships now) — waits 600–1500 ms, randomly
-  succeeds/fails, used so the whole lifecycle is observable end-to-end.
-- **`manual-popout`** — opens the credential pop-out and the platform
-  compose URL, then waits for the user to click "Mark posted" on the card.
-- **`extension-bridge`** (stub) — posts a `window.postMessage` the future
-  browser extension will pick up; logs a clear "no extension detected"
-  error today.
-
-Switching adapters is a single select in the header (persisted to
-localStorage). This is the seam where a real TikTok API server function
-plugs in later.
-
-### 4. Recognition contract
-Every command carries `{platform, kind, payload}`. The runner picks the
-adapter, but adapters route on `platform+kind`, so adding "comment" or
-"DM" later is just a new payload kind — no schema or UI rewrite.
-
-## Out of scope (call out explicitly)
-- Real TikTok posting — needs TikTok OAuth + API credentials; we'll wire
-  the adapter once you decide between API vs. extension.
-- Scheduling / cron — easy follow-up once the queue exists.
-- Cross-device sync of drafts — implied free benefit once commands live in
-  Cloud, but we'll keep current local draft editing as-is.
+## What this gives the user
+- One tab, not 20.
+- Caption/comment already in clipboard — ⌘V + send + ⏎ per item.
+- ~2 sec per action instead of ~15.
+- Honest status trail: every Done/Skip/Fail is recorded in the existing Activity drawer.
+- Zero ToS risk: every action is still performed by a human in TikTok's own UI.
 
 ## Files touched
-- `supabase/migrations/<ts>_commands.sql` — new
-- `src/lib/commands.ts` — types, enqueue, subscribe (new)
-- `src/lib/command-adapters/{simulated,manualPopout,extensionBridge}.ts` — new
-- `src/hooks/useCommandRunner.ts` — new
-- `src/components/omni/Workspace.tsx` — replace `distribute()`, mount runner
-- `src/components/omni/CommandPanel.tsx` — adapter picker, queue stats
-- `src/components/omni/ProfileCard.tsx` — status chip
-- `src/components/omni/ActivityDrawer.tsx` — new
+- `src/lib/commands.ts` — add `like` kind, extend payload with `targetUrl`
+- `src/lib/command-adapters.ts` — new `guided-cycle` adapter, deprecate `manual-popout`
+- `src/hooks/useCommandRunner.ts` — expose `resolveCommand`, single-tab reuse
+- `src/components/omni/CycleHud.tsx` — new
+- `src/components/omni/CommandPanel.tsx` — kind selector + targetUrl field
+- `src/components/omni/Workspace.tsx` — mount `<CycleHud />`
+- `src/components/omni/ActivityDrawer.tsx` — show kind + targetUrl
 
-## Auth note
-Commands are per-user, so this also introduces email/password auth
-(required for RLS). If you'd rather keep it anonymous for now, we can
-gate behind a single shared "workspace" row instead — say the word.
+## Explicitly out of scope (call out)
+- **Real DOM auto-fill / auto-click inside TikTok** — needs the companion Chrome extension. This plan keeps the `extension-bridge` seam intact so we can ship that next without touching the UI.
+- **TikTok official posting API** — happy to add a second adapter `tiktok-api` later that handles `post` end-to-end via the connector gateway for accounts that are OAuth-linked. Say the word and I'll layer it in.
+- **Scheduling** — easy once the queue is solid; not in this round.
