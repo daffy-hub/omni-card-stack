@@ -337,6 +337,14 @@ export function Workspace() {
     return s;
   }, [commands]);
 
+  // For the CycleHud: pick the current awaiting command (only one at a time).
+  const awaitingCmd = useMemo(
+    () => commands.find((c) => c.status === "awaiting") ?? null,
+    [commands],
+  );
+  const awaitingProfile = awaitingCmd ? profilesByIdRef.current[awaitingCmd.profileId] ?? null : null;
+  const remainingTotal = queueStats.queued + queueStats.awaiting + queueStats.running;
+
   const onAdapterChange = (id: AdapterId) => {
     setAdapterId(id);
     saveAdapterId(id);
@@ -501,6 +509,16 @@ export function Workspace() {
         commands={commands}
         profilesById={profilesByIdRef.current}
       />
+
+      {adapterId === "guided-cycle" && (
+        <CycleHud
+          command={awaitingCmd}
+          profile={awaitingProfile}
+          queuedAhead={queueStats.queued}
+          totalRemaining={remainingTotal}
+          onNotify={notify}
+        />
+      )}
 
       {popoutCred && (
         <PopoutCredentialWidget
