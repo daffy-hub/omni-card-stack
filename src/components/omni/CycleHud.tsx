@@ -23,7 +23,10 @@ export function CycleHud({ command, profile, queuedAhead, totalRemaining, onNoti
   const [paused, setPaused] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => subscribePaused(setPaused), []);
+  useEffect(() => {
+    const un = subscribePaused(setPaused);
+    return () => { un(); };
+  }, []);
   useEffect(() => {
     setCopied(false);
     if (!command) return;
