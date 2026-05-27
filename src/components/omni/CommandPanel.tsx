@@ -1,15 +1,15 @@
-import { Send, Eraser, CheckSquare, Square, Trash2, Hash, Activity, Cpu } from "lucide-react";
+import { Send, Eraser, CheckSquare, Square, Trash2, Hash, Activity, Cpu, Link as LinkIcon } from "lucide-react";
 import { useState } from "react";
 import type { Profile } from "@/lib/mock-profiles";
-import { ADAPTER_LIST } from "@/lib/command-adapters";
-import type { AdapterId } from "@/lib/commands";
+import { ADAPTER_LIST, KIND_LABEL } from "@/lib/command-adapters";
+import type { AdapterId, CommandKind } from "@/lib/commands";
 
 interface Props {
   profiles: Profile[];
   selectedIds: Set<string>;
   bulkText: string;
   setBulkText: (s: string) => void;
-  onDistribute: () => void;
+  onDistribute: (kind: CommandKind, targetUrl: string) => void;
   onClearDrafts: () => void;
   onClearAllDrafts: () => void;
   onAppendHashtags: (tags: string) => void;
@@ -38,10 +38,19 @@ export function CommandPanel({
   queueStats,
 }: Props) {
   const [hashtags, setHashtags] = useState("");
+  const [kind, setKind] = useState<CommandKind>("post");
+  const [targetUrl, setTargetUrl] = useState("");
   const flagged = profiles.filter((p) => p.status === "flagged").length;
   const filled = profiles.filter((p) => p.draft.length > 0).length;
   const hasSpintax = /\{[^{}]+\|[^{}]+\}/.test(bulkText);
   const activeAdapter = ADAPTER_LIST.find((a) => a.id === adapterId)!;
+  const KINDS: CommandKind[] = ["post", "comment", "like", "dm"];
+  const needsTarget = kind !== "post";
+  const needsText = kind !== "like";
+  const canDistribute =
+    selectedIds.size > 0 &&
+    (!needsText || bulkText.length > 0) &&
+    (!needsTarget || targetUrl.trim().length > 0);
 
   return (
     <aside className="w-80 shrink-0 border-l border-border bg-card flex flex-col">
@@ -85,6 +94,41 @@ export function CommandPanel({
         </button>
       </div>
 
+      {/* Command kind */}
+      <div className="px-3 py-2 border-b border-border space-y-1.5">
+        <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Action</label>
+        <div className="grid grid-cols-4 gap-1">
+          {KINDS.map((k) => (
+            <button
+              key={k}
+              onClick={() => setKind(k)}
+              className={`text-[10px] uppercase tracking-wider py-1 rounded font-mono ${
+                kind === k ? "bg-primary text-primary-foreground" : "bg-secondary hover:bg-accent text-muted-foreground"
+              }`}
+            >
+              {KIND_LABEL[k]}
+            </button>
+          ))}
+        </div>
+        {needsTarget && (
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <LinkIcon className="h-3 w-3" /> Target URL
+            </label>
+            <input
+              value={targetUrl}
+              onChange={(e) => setTargetUrl(e.target.value)}
+              placeholder={
+                kind === "dm"
+                  ? "https://www.tiktok.com/messages?u=username"
+                  : "https://www.tiktok.com/@user/video/123…"
+              }
+              className="mt-1 w-full bg-input rounded px-2 py-1.5 text-[11px] outline-none focus:ring-1 focus:ring-ring font-mono"
+            />
+          </div>
+        )}
+      </div>
+
       {/* Mass-account quick actions */}
       <div className="px-3 py-2 border-b border-border grid grid-cols-2 gap-1.5">
         <button
@@ -116,13 +160,14 @@ export function CommandPanel({
       <div className="p-3 space-y-3 flex-1 overflow-auto">
         <div>
           <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Global composer · Spintax {hasSpintax && <span className="text-primary">active</span>}
+            {needsText ? "Composer" : "Composer (not used for Like)"} · Spintax {hasSpintax && <span className="text-primary">active</span>}
           </label>
           <textarea
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
+            disabled={!needsText}
             placeholder={`Hello {team|friends|folks}, check our new {product|app}!`}
-            className="mt-1 w-full h-40 resize-none bg-input rounded p-2 text-sm outline-none focus:ring-1 focus:ring-ring font-mono"
+            className="mt-1 w-full h-40 resize-none bg-input rounded p-2 text-sm outline-none focus:ring-1 focus:ring-ring font-mono disabled:opacity-40"
           />
           <div className="text-[10px] text-muted-foreground mt-1 font-mono">
             {bulkText.length} ch · {`{a|b}`} = random per account
@@ -130,12 +175,12 @@ export function CommandPanel({
         </div>
 
         <button
-          onClick={onDistribute}
-          disabled={selectedIds.size === 0 || bulkText.length === 0}
+          onClick={() => onDistribute(kind, targetUrl.trim())}
+          disabled={!canDistribute}
           className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Send className="h-4 w-4" />
-          Distribute to {selectedIds.size} profile{selectedIds.size === 1 ? "" : "s"}
+          Queue {KIND_LABEL[kind]} × {selectedIds.size}
         </button>
 
         <div className="pt-2 border-t border-border">
