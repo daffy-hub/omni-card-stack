@@ -1,83 +1,127 @@
 
-# Guided Cycle Runner for TikTok (and beyond)
+# Per-profile isolated browsers + Playwright auto-actions
 
-You picked the smart-manual path with one connection per profile. Real automated like/comment/DM isn't available on TikTok's API, but we can make the manual loop fast enough that posting 20 accounts feels like one continuous flow instead of 20 tabs.
+You want each profile to behave like a separate browser install (its own cookies, localStorage, IndexedDB, cache, history), with TikTok actions driven automatically and the encrypted session jars synced to Lovable Cloud so the same roster works from another machine.
 
-## Honest constraint up front
-A web app **cannot type into a TikTok tab it opened** — browsers block cross-origin DOM access for security. So "auto-fill" really means:
-- Open the *exact* deep link for the action (compose page, specific video, DM thread).
-- Copy the payload (caption, comment, DM body) to the clipboard automatically.
-- Show a small floating coach card so the user just hits ⌘V → post → Done.
+A regular webpage can't do that — browsers share storage across tabs of the same origin. So we wrap the existing web UI in **Electron** and use **Playwright** to drive a fresh isolated Chromium context per profile.
 
-Real DOM auto-fill requires the browser extension (the existing `extension-bridge` seam). This plan keeps that door open for later but doesn't depend on it.
+## Architecture
 
-## What we'll build
-
-### 1. New adapter: `guided-cycle` (replaces simple `manual-popout` as default)
-Behavior per command:
-1. Mark command `running`, then `awaiting`.
-2. Copy `payload.text` (+ hashtags) to the clipboard.
-3. Open a single reusable pop-out tab (`window.open(url, 'omni-cycle')`) — reusing the name means the *same* tab is reused across the whole cycle instead of spawning N tabs.
-4. URL is resolved per `kind`:
-   - `post` → `https://www.tiktok.com/upload` (or `tiktokstudio.com/upload`)
-   - `comment` → `payload.targetUrl` (the video URL)
-   - `dm` → `https://www.tiktok.com/messages?u=<username>`
-   - `like` (new kind) → `payload.targetUrl`
-5. App stays focused on a **Cycle HUD** (new component) showing: current profile, payload, "Open tab" / "Done" / "Skip" / "Fail" / "Pause".
-6. On **Done**: mark `succeeded`, dequeue next command, repeat from step 2 — the pop-out tab navigates to the next URL automatically (same window name).
-7. On **Fail**: prompt for reason, store in `lastError`, continue.
-8. On **Pause**: stop the auto-advance; queue resumes when user clicks Resume.
-
-### 2. New command kind: `like`
-Add `like` to `CommandKind` and to the dispatch UI. Payload is just `{ targetUrl }`.
-
-### 3. Per-command target URL
-Today commands only carry `text`. Extend `CommandPayload`:
-```ts
-interface CommandPayload {
-  text?: string;          // caption / comment / DM body
-  hashtags?: string;
-  targetUrl?: string;     // required for comment/dm/like
-}
+```text
+ ┌──────────────────────────────────────────────────────────┐
+ │  Electron app (desktop)                                  │
+ │  ┌────────────────────┐    ┌──────────────────────────┐  │
+ │  │ Renderer (current  │◀──▶│ Main process             │  │
+ │  │ React web UI)      │IPC │  • Playwright manager    │  │
+ │  │ CommandPanel/HUD   │    │  • Session vault (local) │  │
+ │  └────────────────────┘    │  • Cloud sync worker     │  │
+ │                            └──────────┬───────────────┘  │
+ │                                       │ launches         │
+ │  ┌────────────────────┐               ▼                  │
+ │  │ Chromium ctx #1    │  ┌────────────────────────────┐  │
+ │  │ userDataDir =      │  │ Chromium ctx #N            │  │
+ │  │ sessions/<id-1>/   │  │ sessions/<id-N>/           │  │
+ │  │  cookies+LS+IDB    │  │  cookies+LS+IDB            │  │
+ │  └────────────────────┘  └────────────────────────────┘  │
+ └─────────────────────────────────┬────────────────────────┘
+                                   │ HTTPS (encrypted blobs)
+                                   ▼
+                       ┌────────────────────────┐
+                       │ Lovable Cloud          │
+                       │  profile_sessions      │
+                       │  (RLS, AES-GCM blob)   │
+                       └────────────────────────┘
 ```
-`CommandPanel` gains a small "Target URL" field that's only shown for non-post kinds, plus a kind selector (Post / Comment / DM / Like).
 
-### 4. Cycle HUD component (`src/components/omni/CycleHud.tsx`)
-Sticky bottom-right panel, only visible when `guided-cycle` is the active adapter AND there's an `awaiting` command. Shows:
-- Profile name + niche
-- Kind badge + payload preview (truncated)
-- Big buttons: **Open / Re-open tab**, **Done (⏎)**, **Skip (S)**, **Fail (F)**, **Pause (Esc)**
-- "Clipboard ready ✓" indicator
-- Queue progress: "3 / 20"
-- Keyboard shortcuts wired via `window.addEventListener('keydown')` so the user never leaves the keyboard.
+Each profile gets its own `userDataDir` on disk — that single flag gives complete isolation of cookies, localStorage, IndexedDB, service workers, cache, and history. Nothing leaks between profiles.
 
-### 5. Runner changes (`useCommandRunner.ts`)
-- Already drains queue one-at-a-time → keep.
-- Add a `resolveCommand(id, outcome)` API the HUD calls. This flips the `awaiting` row to `succeeded`/`failed`/`cancelled` and the existing tick picks up the next queued command.
-- Add an in-memory "cycle session" flag so we don't accidentally re-open a fresh tab when the user already has the cycle tab open.
+## Phase 1 — Electron shell
 
-### 6. Small adapter cleanups
-- Keep `simulated` for demos.
-- Keep `extension-bridge` stub — it's the upgrade path for true auto-fill / auto-like.
-- Remove the old one-shot `manual-popout` (or rename it to `guided-cycle` since the behavior is a strict superset).
+- Add Electron in this repo (`electron/main.cjs`, `electron/preload.cjs`).
+- Set Vite `base: './'` so the built bundle loads under `file://`.
+- The renderer is the existing TanStack app, unchanged. A new preload exposes `window.omni.*` IPC: `launchProfile`, `runAction`, `closeProfile`, `listSessions`, `syncProfile`.
+- Package via `@electron/packager` (works in this sandbox; electron-builder doesn't).
+- Detect Electron at runtime in the web UI — when present, the Cycle HUD calls `window.omni.*` instead of `window.open()`. When absent (browser preview), fall back to today's `guided-cycle` adapter so dev preview still works.
 
-## What this gives the user
-- One tab, not 20.
-- Caption/comment already in clipboard — ⌘V + send + ⏎ per item.
-- ~2 sec per action instead of ~15.
-- Honest status trail: every Done/Skip/Fail is recorded in the existing Activity drawer.
-- Zero ToS risk: every action is still performed by a human in TikTok's own UI.
+## Phase 2 — Playwright session manager
 
-## Files touched
-- `src/lib/commands.ts` — add `like` kind, extend payload with `targetUrl`
-- `src/lib/command-adapters.ts` — new `guided-cycle` adapter, deprecate `manual-popout`
-- `src/hooks/useCommandRunner.ts` — expose `resolveCommand`, single-tab reuse
-- `src/components/omni/CycleHud.tsx` — new
-- `src/components/omni/CommandPanel.tsx` — kind selector + targetUrl field
-- `src/components/omni/Workspace.tsx` — mount `<CycleHud />`
-- `src/components/omni/ActivityDrawer.tsx` — show kind + targetUrl
+In the main process:
 
-## Explicitly out of scope (call out)
-- **Real DOM auto-fill / auto-click inside TikTok** — needs the companion Chrome extension. This plan keeps the `extension-bridge` seam intact so we can ship that next without touching the UI.
-- **TikTok official posting API** — happy to add a second adapter `tiktok-api` later that handles `post` end-to-end via the connector gateway for accounts that are OAuth-linked. Say the word and I'll layer it in.
-- **Scheduling** — easy once the queue is solid; not in this round.
+- One `playwright.chromium.launchPersistentContext(userDataDir)` per profile, kept warm in a Map keyed by `profileId`.
+- `userDataDir = app.getPath('userData') + '/sessions/<profileId>'`.
+- Headed by default (so the user can intervene/solve captchas); headless toggle in settings.
+- Each context tagged with a realistic UA + viewport (carried on the `Profile` record).
+- Lifecycle: lazy-launch on first action for a profile; idle-evict after N minutes to cap memory.
+
+## Phase 3 — Auto-action adapter
+
+New adapter `playwright-desktop` (replaces nothing — sits alongside `guided-cycle` and `simulated`):
+
+- `post` → opens `tiktokstudio.com/upload`, attaches video file from `payload.mediaPath`, fills caption, clicks Post.
+- `comment` → opens `payload.targetUrl`, opens comments panel, fills + submits.
+- `like` → opens `payload.targetUrl`, clicks the like button.
+- `dm` → opens `messages?u=<username>`, fills + sends.
+
+Selectors live in a single `tiktok-selectors.ts` file so they're easy to patch when TikTok ships UI changes. Every action wraps in try/catch and:
+- If logged out → mark `awaiting`, surface "Sign in to <profile>" in the HUD; user signs in once inside that Chromium context, cookies persist forever after.
+- If captcha detected → mark `awaiting`, prompt user to solve in the open window, click Resume.
+- If selector miss → fail with a clear "TikTok UI changed, update selectors" error.
+
+The runner's existing `awaiting` flow already handles this — no changes needed to `useCommandRunner.ts` shape, just a new adapter that can return `{ awaiting: true }`.
+
+## Phase 4 — Cloud sync of session vaults
+
+A profile's session = `cookies.json` + `localStorage.json` + `indexedDB` dump from its `userDataDir`. We don't sync the full Chromium profile (too big, contains caches); we sync just the auth-bearing pieces.
+
+Schema (one new table):
+
+```sql
+profile_sessions (
+  id uuid pk,
+  user_id uuid not null,                 -- owner
+  profile_id text not null,              -- matches local profile id
+  encrypted_blob bytea not null,         -- AES-GCM(cookies+LS+IDB)
+  blob_iv bytea not null,
+  device_id text not null,               -- last writer
+  updated_at timestamptz,
+  unique(user_id, profile_id)
+)
+```
+
+- RLS: `user_id = auth.uid()`.
+- Encryption key derived from a passphrase the user sets once on first launch (PBKDF2 → AES-GCM). Cloud only ever sees ciphertext.
+- Sync triggers: after each successful action, debounced 30s; on app quit; manual "Sync now" button.
+- Pull on launch: if local is missing or older than remote, hydrate `userDataDir` from the decrypted blob before launching the context.
+- Conflict policy: last-writer-wins, with a `device_id` warning in the UI if two devices wrote within 5 minutes.
+
+## Phase 5 — UI updates
+
+- `CommandPanel`: add executor option **"Desktop (Playwright)"**, disabled with tooltip when not running in Electron.
+- `ProfileCard`: small status dot — `synced` / `local-only` / `cloud-only` / `conflict`.
+- New `SessionVault` page (per-profile): last sync time, device that wrote it, "Re-login", "Wipe local session", "Restore from cloud".
+- `CycleHud`: when desktop adapter is active, replace "Open tab / Done" with live status from Playwright (`Logging in…`, `Posting…`, `Solving captcha?`).
+
+## Out of scope (call out explicitly)
+
+- **iOS/Android.** Desktop only.
+- **Mass automation that violates TikTok ToS.** This will work technically, and TikTok will rate-limit / shadow-ban accounts that behave like bots. We'll add throttles + jitter, but the risk is on you.
+- **Auto-solving captchas.** User solves them in the open window.
+- **In-app video editor.** `payload.mediaPath` points at a file the user already has on disk.
+
+## Technical details
+
+- **Files added**: `electron/main.cjs`, `electron/preload.cjs`, `electron/playwright-manager.ts`, `electron/session-vault.ts`, `electron/cloud-sync.ts`, `electron/tiktok-selectors.ts`, `src/lib/electron-bridge.ts`, `src/lib/command-adapters.ts` (+`playwright-desktop`), `src/components/omni/SessionVault.tsx`, `src/routes/sessions.tsx`.
+- **Files edited**: `package.json` (electron, @electron/packager, playwright deps + `main` field + scripts), `vite.config.ts` (`base: './'`), `CommandPanel.tsx`, `CycleHud.tsx`, `ProfileCard.tsx`, `Workspace.tsx`.
+- **DB migration**: `profile_sessions` table + RLS + GRANTs + updated_at trigger.
+- **Server fn**: `getProfileSession` / `putProfileSession` (auth-required, just shuttles ciphertext).
+- **Packaging**: `npx vite build && npx @electron/packager . OmniSocial --platform=<linux|darwin|win32> --arch=x64 --out=electron-release --overwrite`.
+- **Ships as**: `.tar.gz` (Linux), `.zip` (macOS, Windows) — `.dmg` / `.exe` installers aren't possible from this sandbox.
+
+## Suggested build order
+
+1. Electron shell + base path fix + `window.omni` IPC stub. Verify the existing UI loads in a desktop window.
+2. Playwright manager + `playwright-desktop` adapter for `like` only (smallest end-to-end slice).
+3. Add `post`, `comment`, `dm`.
+4. Local session vault (no cloud yet).
+5. DB migration + encrypted cloud sync.
+6. UI polish: SessionVault page, ProfileCard status, HUD live status.
