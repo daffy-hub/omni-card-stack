@@ -72,14 +72,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "omni social studio" },
+      { name: "description", content: "OmniSocial Studio is a mass profile workspace for managing and updating many social media accounts simultaneously." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "omni social studio" },
+      { property: "og:description", content: "OmniSocial Studio is a mass profile workspace for managing and updating many social media accounts simultaneously." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "omni social studio" },
+      { name: "twitter:description", content: "OmniSocial Studio is a mass profile workspace for managing and updating many social media accounts simultaneously." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7490d9ba-1874-4f81-84a5-f93434055866/id-preview-f393bea7--d3484ba0-371e-4aab-a1fc-6f33b1c26d1c.lovable.app-1779801970849.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7490d9ba-1874-4f81-84a5-f93434055866/id-preview-f393bea7--d3484ba0-371e-4aab-a1fc-6f33b1c26d1c.lovable.app-1779801970849.png" },
     ],
     links: [
       {
