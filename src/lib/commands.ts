@@ -32,7 +32,11 @@ export interface Command {
   adapter?: AdapterId;
 }
 
-export type AdapterId = "simulated" | "guided-cycle" | "extension-bridge";
+export type AdapterId =
+  | "simulated"
+  | "guided-cycle"
+  | "extension-bridge"
+  | "playwright-desktop";
 
 const LS_KEY = "omni:commands:v1";
 const MAX_HISTORY = 500;
