@@ -38,8 +38,10 @@ export const putProfileSession = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const blob = Buffer.from(data.encryptedBlob, "base64");
-    const iv = Buffer.from(data.blobIv, "base64");
+    // PostgREST accepts bytea as `\x<hex>` literal in JSON.
+    const toHex = (b64: string) => "\\x" + Buffer.from(b64, "base64").toString("hex");
+    const blob = toHex(data.encryptedBlob);
+    const iv = toHex(data.blobIv);
     const { error } = await supabase
       .from("profile_sessions")
       .upsert(

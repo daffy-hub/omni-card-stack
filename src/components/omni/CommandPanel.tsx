@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { Profile } from "@/lib/mock-profiles";
 import { ADAPTER_LIST, KIND_LABEL } from "@/lib/command-adapters";
 import type { AdapterId, CommandKind } from "@/lib/commands";
+import { isElectron } from "@/lib/electron-bridge";
 
 interface Props {
   profiles: Profile[];
@@ -45,6 +46,7 @@ export function CommandPanel({
   const hasSpintax = /\{[^{}]+\|[^{}]+\}/.test(bulkText);
   const activeAdapter = ADAPTER_LIST.find((a) => a.id === adapterId)!;
   const KINDS: CommandKind[] = ["post", "comment", "like", "dm"];
+  const electron = isElectron();
   const needsTarget = kind !== "post";
   const needsText = kind !== "like";
   const canDistribute =
@@ -71,9 +73,14 @@ export function CommandPanel({
           onChange={(e) => onAdapterChange(e.target.value as AdapterId)}
           className="w-full bg-input rounded px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-ring font-mono"
         >
-          {ADAPTER_LIST.map((a) => (
-            <option key={a.id} value={a.id}>{a.label}</option>
-          ))}
+          {ADAPTER_LIST.map((a) => {
+            const disabled = a.id === "playwright-desktop" && !electron;
+            return (
+              <option key={a.id} value={a.id} disabled={disabled}>
+                {a.label}{disabled ? " — desktop only" : ""}
+              </option>
+            );
+          })}
         </select>
         <div className="text-[10px] text-muted-foreground leading-snug">
           {activeAdapter.description}
