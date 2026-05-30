@@ -1,5 +1,6 @@
 import type { Profile } from "./mock-profiles";
 import type { AdapterId, Command, CommandKind } from "./commands";
+import { isElectron, getBridge } from "./electron-bridge";
 
 export interface AdapterResult {
   ok: boolean;
@@ -111,13 +112,52 @@ const extensionBridge: CommandAdapter = {
     }),
 };
 
+/**
+ * Real per-profile automation when running inside the Electron shell.
+ * In the web preview the bridge is missing — every call fails fast with
+ * a clear message so the user picks `guided-cycle` instead.
+ */
+const playwrightDesktop: CommandAdapter = {
+  id: "playwright-desktop",
+  label: "Desktop (Playwright)",
+  description:
+    "Drives a real isolated Chromium per profile (own cookies, localStorage, history). Requires the OmniSocial desktop app — not available in the web preview.",
+  run: async (cmd, profile) => {
+    if (!isElectron()) {
+      return {
+        ok: false,
+        error: "Desktop runner unavailable — open this app in the OmniSocial desktop build.",
+      };
+    }
+    const bridge = getBridge();
+    if (!bridge) return { ok: false, error: "Electron bridge missing" };
+    try {
+      const launched = await bridge.launchProfile(profile.id);
+      if (!launched.ok) return { ok: false, error: launched.error ?? "Failed to launch profile context" };
+      const res = await bridge.runAction(cmd, profile);
+      if (res.awaiting) return { ok: false, awaiting: true };
+      // Fire-and-forget cloud sync after each success.
+      if (res.ok) bridge.syncProfile(profile.id).catch(() => {});
+      return res;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+};
+
 export const ADAPTERS: Record<AdapterId, CommandAdapter> = {
   simulated,
   "guided-cycle": guidedCycle,
   "extension-bridge": extensionBridge,
+  "playwright-desktop": playwrightDesktop,
 };
 
-export const ADAPTER_LIST: CommandAdapter[] = [guidedCycle, simulated, extensionBridge];
+export const ADAPTER_LIST: CommandAdapter[] = [
+  guidedCycle,
+  playwrightDesktop,
+  simulated,
+  extensionBridge,
+];
 
 const LS_KEY = "omni:adapter:v1";
 
