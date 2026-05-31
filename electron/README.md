@@ -83,6 +83,40 @@ TikTok changes its DOM regularly. All selectors live in one file:
 `electron/tiktok-selectors.cjs`. Patch that file (no rebuild of the
 renderer required) and ship a new desktop release.
 
+## Loading ProtonVPN (or any Chromium extension) per profile
+
+Each profile context auto-loads any unpacked Chromium extension placed in:
+
+```
+<userData>/extensions/<extension-folder>/   ← must contain manifest.json
+```
+
+On macOS that's `~/Library/Application Support/OmniSocial/extensions/`.
+On Windows: `%APPDATA%/OmniSocial/extensions/`. On Linux: `~/.config/OmniSocial/extensions/`.
+
+### ProtonVPN setup
+
+1. Install the ProtonVPN browser extension in regular Chrome from the
+   Chrome Web Store, then copy the unpacked folder from
+   `~/Library/Application Support/Google/Chrome/Default/Extensions/<id>/<version>/`
+   into `<userData>/extensions/protonvpn/`.
+   (Or download the unpacked source from ProtonVPN's GitHub release.)
+2. Restart the desktop app. Every profile context now launches with
+   ProtonVPN loaded; sign-in state for the extension is persisted per
+   profile (same `userDataDir`), so each account can be pinned to a
+   different VPN exit.
+3. Override the location with env vars if needed:
+   - `OMNI_EXTENSIONS_DIR=/custom/path` — directory scanned for extensions.
+   - `OMNI_PROTONVPN_PATH=/exact/path/to/protonvpn` — single extension override.
+
+### Why this needs real Chrome, not bundled Chromium
+
+When any extension is detected, the manager switches Playwright to
+`channel: "chrome"` (uses the user's installed Chrome). Bundled Chromium
+strips out the extension components MV3 extensions like ProtonVPN need
+(widevine, proprietary codecs, full extension APIs). Install Chrome first
+if you haven't already.
+
 ## Out of scope (by design)
 
 - iOS/Android. Desktop only.
