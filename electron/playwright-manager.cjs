@@ -17,6 +17,35 @@ function userDataDirFor(profileId) {
   return root;
 }
 
+// Resolve unpacked Chromium extensions to load into every profile context.
+// ProtonVPN (and any other extension) goes in:
+//   <userData>/extensions/<extension-folder>/   (unpacked, contains manifest.json)
+// or override with env OMNI_EXTENSIONS_DIR / OMNI_PROTONVPN_PATH.
+function resolveExtensionPaths() {
+  const paths = [];
+  const explicit = process.env.OMNI_PROTONVPN_PATH;
+  if (explicit && fs.existsSync(path.join(explicit, "manifest.json"))) {
+    paths.push(explicit);
+  }
+  const dir = process.env.OMNI_EXTENSIONS_DIR
+    || path.join(app.getPath("userData"), "extensions");
+  try {
+    if (fs.existsSync(dir)) {
+      for (const entry of fs.readdirSync(dir)) {
+        const full = path.join(dir, entry);
+        if (fs.statSync(full).isDirectory()
+            && fs.existsSync(path.join(full, "manifest.json"))
+            && !paths.includes(full)) {
+          paths.push(full);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[omni] extension scan failed:", e?.message);
+  }
+  return paths;
+}
+
 async function launchProfile(profileId) {
   if (!chromium) return { ok: false, error: "Playwright not installed. Run: npm i -D playwright && npx playwright install chromium" };
   if (contexts.has(profileId)) {
@@ -24,8 +53,19 @@ async function launchProfile(profileId) {
     return { ok: true };
   }
   try {
+    const extensions = resolveExtensionPaths();
+    const extArgs = extensions.length
+      ? [
+          `--disable-extensions-except=${extensions.join(",")}`,
+          `--load-extension=${extensions.join(",")}`,
+        ]
+      : [];
     const ctx = await chromium.launchPersistentContext(userDataDirFor(profileId), {
+      // Loading unpacked extensions requires headed Chromium (channel: chrome
+      // gives a real Chrome build that supports MV3 extensions reliably).
       headless: false,
+      channel: extensions.length ? "chrome" : undefined,
+      args: extArgs,
       viewport: { width: 412, height: 915 }, // phone-ish
       userAgent:
         "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
@@ -33,7 +73,7 @@ async function launchProfile(profileId) {
     const page = ctx.pages()[0] || (await ctx.newPage());
     contexts.set(profileId, { ctx, page, lastUsed: Date.now() });
     ctx.on("close", () => contexts.delete(profileId));
-    return { ok: true };
+    return { ok: true, extensions: extensions.length };
   } catch (e) {
     return { ok: false, error: e?.message || String(e) };
   }
